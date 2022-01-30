@@ -1,0 +1,5 @@
+indent_style = "Block"
+hard_tabs = true
+imports_layout = "Vertical"
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
