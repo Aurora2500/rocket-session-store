@@ -1,3 +1,9 @@
+//!	An in-memory implementationof a session store.
+//! 
+//! This module provides [MemoryStore], an implementation of [Store]
+//! to be used for testing and development. It is not optimized for production
+//! and thus you should use another store to use it in the real world.
+
 use std::{
 	collections::HashMap,
 	time::{
@@ -13,6 +19,9 @@ use rocket::tokio::sync::{
 
 use crate::Store;
 
+/// An in memory implementation of a session store using hashmaps.
+/// Do note that this implementation is just for testing purposes,
+/// and should not be used in any real world application.
 pub struct MemoryStore<T> {
 	map: RwLock<HashMap<String, Mutex<MemoryStoreFrame<T>>>>,
 }

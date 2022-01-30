@@ -38,6 +38,8 @@ fn new_id(length: usize) -> String {
 
 const ID_LENGTH: usize = 24;
 
+/// A generic store in which to write and retrive sessions either
+/// trough an in memory hashmap or a database connection.
 #[rocket::async_trait]
 pub trait Store: Send + Sync {
 	type Value;
@@ -61,17 +63,25 @@ impl AsRef<str> for SessionID {
 	}
 }
 
-#[derive(Clone)]
+/// A request guard implementing [FromRequest] to retrive the session
+/// based on the cookie from the user.
 pub struct Session<'s, T: 'static> {
 	store: &'s State<SessionStore<T>>,
 	pub(crate) token: SessionID,
 }
 
 impl<'s, T> Session<'s, T> {
+	/// Get the session value from the store.
+	/// 
+	/// Returns [None] if there is no initialized session value
+	/// or if the value has expired.
 	pub async fn get(&self) -> Option<T> {
 		self.store.store.get(self.token.as_ref()).await
 	}
 
+	/// Sets the session value from the store.
+	/// 
+	/// This will refresh the expiration timer.
 	pub async fn set(&self, value: T) {
 		self.store
 			.store
@@ -79,6 +89,7 @@ impl<'s, T> Session<'s, T> {
 			.await
 	}
 
+	/// Refreshes the expiration timer on the sesion in the store.
 	pub async fn touch(&self) {
 		self.store
 			.store
@@ -86,6 +97,7 @@ impl<'s, T> Session<'s, T> {
 			.await
 	}
 
+	/// Removes the session from the store.
 	pub async fn remove(&self) {
 		self.store.store.remove(self.token.as_ref()).await
 	}
@@ -121,12 +133,21 @@ where
 }
 
 pub struct SessionStore<T> {
+	/// The store that will be used to store the sessions.
 	pub store: Box<dyn Store<Value = T>>,
+	/// The name of the cookie to be used for sessions.
+	/// 
+	/// This will be the name the cookie will be stored under in the browser.
 	pub name: String,
+	/// The duration of the session.
+	/// 
+	/// When so much time passes after storing or touching a session, it expires
+	/// and won't be accesible.
 	pub duration: Duration,
 }
 
 impl<T> SessionStore<T> {
+	/// A function to turn the store into a [Fairing] to attach on a rocket.
 	pub fn fairing(self) -> SessionStoreFairing<T> {
 		SessionStoreFairing {
 			store: Mutex::new(Some(self)),
@@ -134,6 +155,10 @@ impl<T> SessionStore<T> {
 	}
 }
 
+/// The fairing for the session store.
+/// 
+/// This shouldn't be created directly and you should
+/// instead use [SessionStore::fairing()] to create it
 pub struct SessionStoreFairing<T> {
 	store: Mutex<Option<SessionStore<T>>>,
 }
