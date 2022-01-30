@@ -1,3 +1,10 @@
+#[cfg(test)]
+mod test;
+
+mod memory;
+
+use std::time::Duration;
+
 use rand::{
 	rngs::OsRng,
 	Rng,
@@ -31,16 +38,17 @@ fn new_id(length: usize) -> String {
 
 const ID_LENGTH: usize = 24;
 
+#[rocket::async_trait]
 pub trait Store: Send + Sync {
 	type Value;
 	/// Get the value from the store
-	fn get(&self, id: &str) -> Option<Self::Value>;
+	async fn get(&self, id: &str) -> Option<Self::Value>;
 	/// Set the value from the store
-	fn set(&self, id: &str, value: Self::Value);
+	async fn set(&self, id: &str, value: Self::Value, duration: Duration);
 	/// Touch the value, refreshing its expiry time.
-	fn touch(&self, id: &str);
+	async fn touch(&self, id: &str, duration: Duration);
 	/// Remove the value from the store.
-	fn remove(&self, id: &str);
+	async fn remove(&self, id: &str);
 }
 
 /// String representing the ID.
@@ -56,24 +64,30 @@ impl AsRef<str> for SessionID {
 #[derive(Clone)]
 pub struct Session<'s, T: 'static> {
 	store: &'s State<SessionStore<T>>,
-	token: SessionID,
+	pub(crate) token: SessionID,
 }
 
 impl<'s, T> Session<'s, T> {
-	pub fn get(&self) -> Option<T> {
-		self.store.store.get(self.token.as_ref())
+	pub async fn get(&self) -> Option<T> {
+		self.store.store.get(self.token.as_ref()).await
 	}
 
-	pub fn set(&self, value: T) {
-		self.store.store.set(self.token.as_ref(), value)
+	pub async fn set(&self, value: T) {
+		self.store
+			.store
+			.set(self.token.as_ref(), value, self.store.duration)
+			.await
 	}
 
-	pub fn touch(&self) {
-		self.store.store.touch(self.token.as_ref());
+	pub async fn touch(&self) {
+		self.store
+			.store
+			.touch(self.token.as_ref(), self.store.duration)
+			.await
 	}
 
-	pub fn remove(&self) {
-		self.store.store.remove(self.token.as_ref());
+	pub async fn remove(&self) {
+		self.store.store.remove(self.token.as_ref()).await
 	}
 }
 
@@ -106,47 +120,10 @@ where
 	}
 }
 
-pub struct StoreBuilder<T> {
-	store: Box<dyn Store<Value = T>>,
-	name: String,
-	duration: u32,
-}
-
-impl<T> StoreBuilder<T> {
-	pub fn new(store: impl Store<Value = T> + 'static) -> Self {
-		StoreBuilder {
-			store: Box::new(store),
-			name: String::from("token"),
-			duration: 24 * 3600,
-		}
-	}
-
-	pub fn set_name(mut self, name: String) -> Self {
-		self.name = name;
-		self
-	}
-
-	pub fn set_duration(mut self, duration: u32) -> Self {
-		self.duration = duration;
-		self
-	}
-
-	pub fn build(self) -> SessionStore<T> {
-		let store = self.store;
-		let name = self.name;
-		let duration = self.duration;
-		SessionStore {
-			store,
-			name,
-			duration,
-		}
-	}
-}
-
 pub struct SessionStore<T> {
 	pub store: Box<dyn Store<Value = T>>,
 	pub name: String,
-	pub duration: u32,
+	pub duration: Duration,
 }
 
 impl<T> SessionStore<T> {
