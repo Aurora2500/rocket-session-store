@@ -3,6 +3,8 @@ use std::{
 	time::Duration,
 };
 
+#[cfg(feature = "redis")]
+use ::redis::Client as RedisClient;
 use rocket::{
 	get,
 	http::Status,
@@ -13,6 +15,8 @@ use rocket::{
 	Rocket,
 };
 
+#[cfg(feature = "redis")]
+use crate::redis::RedisStore;
 use crate::{
 	memory::MemoryStore,
 	Session,
@@ -55,13 +59,16 @@ fn generic_basic_test(store: impl Store<Value = String> + 'static) {
 
 	assert_eq!(client.cookies().get("token"), None);
 
-	let res1 = client.post("/set_name/TestingName").dispatch();
-	assert_eq!(res1.status(), Status::Ok);
+	let res1 = client.get("/get_name").dispatch();
+	assert_eq!(res1.status(), Status::NotFound);
+
+	let res2 = client.post("/set_name/TestingName").dispatch();
+	assert_eq!(res2.status(), Status::Ok);
 	assert!(client.cookies().get("token").is_some());
 
-	let res2 = client.get("/get_name").dispatch();
-
-	assert_eq!(res2.into_string(), Some("TestingName".into()))
+	let res3 = client.get("/get_name").dispatch();
+	assert_eq!(res3.status(), Status::Ok);
+	assert_eq!(res3.into_string(), Some("TestingName".into()))
 }
 
 fn generic_expiration_test(store: impl Store<Value = String> + 'static) {
@@ -135,3 +142,10 @@ macro_rules! test_store {
 }
 
 test_store!(in_memory, MemoryStore::<String>::new());
+
+#[cfg(feature = "redis")]
+test_store!(redis, {
+	let client = RedisClient::open("redis://127.0.0.1/").expect("Couldn't open redis");
+	let store = RedisStore::new(client);
+	store
+});

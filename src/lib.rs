@@ -3,6 +3,9 @@ mod test;
 
 pub mod memory;
 
+#[cfg(feature = "redis")]
+pub mod redis;
+
 use std::time::Duration;
 
 use rand::{
