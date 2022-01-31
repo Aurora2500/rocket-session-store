@@ -1,5 +1,5 @@
-//!	An in-memory implementationof a session store.
-//! 
+//! An in-memory implementationof a session store.
+//!
 //! This module provides [MemoryStore], an implementation of [Store]
 //! to be used for testing and development. It is not optimized for production
 //! and thus you should use another store to use it in the real world.
@@ -56,7 +56,11 @@ where
 		let lock = self.map.read().await;
 		if let Some(frame) = lock.get(id) {
 			let frame_lock = frame.lock().await;
-			if frame_lock.expiry.checked_duration_since(Instant::now()).is_some() {
+			if frame_lock
+				.expiry
+				.checked_duration_since(Instant::now())
+				.is_some()
+			{
 				return Some(frame_lock.value.clone());
 			};
 		};

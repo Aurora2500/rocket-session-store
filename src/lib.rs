@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test;
 
-mod memory;
+pub mod memory;
 
 use std::time::Duration;
 
@@ -72,7 +72,7 @@ pub struct Session<'s, T: 'static> {
 
 impl<'s, T> Session<'s, T> {
 	/// Get the session value from the store.
-	/// 
+	///
 	/// Returns [None] if there is no initialized session value
 	/// or if the value has expired.
 	pub async fn get(&self) -> Option<T> {
@@ -80,7 +80,7 @@ impl<'s, T> Session<'s, T> {
 	}
 
 	/// Sets the session value from the store.
-	/// 
+	///
 	/// This will refresh the expiration timer.
 	pub async fn set(&self, value: T) {
 		self.store
@@ -136,11 +136,11 @@ pub struct SessionStore<T> {
 	/// The store that will be used to store the sessions.
 	pub store: Box<dyn Store<Value = T>>,
 	/// The name of the cookie to be used for sessions.
-	/// 
+	///
 	/// This will be the name the cookie will be stored under in the browser.
 	pub name: String,
 	/// The duration of the session.
-	/// 
+	///
 	/// When so much time passes after storing or touching a session, it expires
 	/// and won't be accesible.
 	pub duration: Duration,
@@ -156,7 +156,7 @@ impl<T> SessionStore<T> {
 }
 
 /// The fairing for the session store.
-/// 
+///
 /// This shouldn't be created directly and you should
 /// instead use [SessionStore::fairing()] to create it
 pub struct SessionStoreFairing<T> {
