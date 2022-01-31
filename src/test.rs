@@ -40,10 +40,15 @@ async fn remove_name(session: Session<'_, String>) {
 	session.remove().await
 }
 
+#[post("/refresh")]
+async fn refresh(session: Session<'_, String>) {
+	session.touch().await
+}
+
 fn example_rocket<T: 'static>(store: SessionStore<T>) -> Rocket<Build> {
 	rocket::build()
 		.attach(store.fairing())
-		.mount("/", routes![set_name, get_name, remove_name])
+		.mount("/", routes![set_name, get_name, remove_name, refresh])
 }
 
 fn generic_basic_test(store: impl Store<Value = String> + 'static) {
@@ -118,6 +123,27 @@ fn generic_remove_test(store: impl Store<Value = String> + 'static) {
 	assert_eq!(res4.status(), Status::NotFound);
 }
 
+fn generic_refresh_test(store: impl Store<Value = String> + 'static) {
+	let client: Client = {
+		let session_store: SessionStore<String> = SessionStore {
+			store: Box::new(store),
+			name: "token".into(),
+			duration: Duration::from_secs(2),
+		};
+		let rocket = example_rocket(session_store);
+		Client::tracked(rocket).expect("Expected to build client")
+	};
+
+	let res1 = client.post("/set_name/TestingName").dispatch();
+	assert_eq!(res1.status(), Status::Ok);
+	sleep(Duration::from_millis(1_500));
+	let res2 = client.post("/refresh").dispatch();
+	assert_eq!(res2.status(), Status::Ok);
+	sleep(Duration::from_millis(1_500));
+	let res3 = client.get("/get_name").dispatch();
+	assert_eq!(res3.status(), Status::Ok);
+}
+
 macro_rules! test_store {
 	($name:ident, $store:expr) => {
 		mod $name {
@@ -136,6 +162,11 @@ macro_rules! test_store {
 			#[test]
 			fn remove_test() {
 				generic_remove_test($store);
+			}
+
+			#[test]
+			fn refresh_test() {
+				generic_refresh_test($store);
 			}
 		}
 	};
