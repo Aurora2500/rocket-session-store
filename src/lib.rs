@@ -18,11 +18,15 @@ use rocket::{
 		Info,
 		Kind,
 	},
-	http::Cookie,
+	http::{
+		Cookie,
+		Status,
+	},
 	request::{
 		FromRequest,
 		Outcome,
 	},
+	response::Responder,
 	tokio::sync::Mutex,
 	Build,
 	Request,
@@ -30,6 +34,7 @@ use rocket::{
 	Rocket,
 	State,
 };
+use thiserror::Error;
 
 fn new_id(length: usize) -> String {
 	OsRng
@@ -47,13 +52,13 @@ const ID_LENGTH: usize = 24;
 pub trait Store: Send + Sync {
 	type Value;
 	/// Get the value from the store
-	async fn get(&self, id: &str) -> Option<Self::Value>;
+	async fn get(&self, id: &str) -> SessionResult<Option<Self::Value>>;
 	/// Set the value from the store
-	async fn set(&self, id: &str, value: Self::Value, duration: Duration);
+	async fn set(&self, id: &str, value: Self::Value, duration: Duration) -> SessionResult<()>;
 	/// Touch the value, refreshing its expiry time.
-	async fn touch(&self, id: &str, duration: Duration);
+	async fn touch(&self, id: &str, duration: Duration) -> SessionResult<()>;
 	/// Remove the value from the store.
-	async fn remove(&self, id: &str);
+	async fn remove(&self, id: &str) -> SessionResult<()>;
 }
 
 /// String representing the ID.
@@ -78,14 +83,14 @@ impl<'s, T> Session<'s, T> {
 	///
 	/// Returns [None] if there is no initialized session value
 	/// or if the value has expired.
-	pub async fn get(&self) -> Option<T> {
+	pub async fn get(&self) -> SessionResult<Option<T>> {
 		self.store.store.get(self.token.as_ref()).await
 	}
 
 	/// Sets the session value from the store.
 	///
 	/// This will refresh the expiration timer.
-	pub async fn set(&self, value: T) {
+	pub async fn set(&self, value: T) -> SessionResult<()> {
 		self.store
 			.store
 			.set(self.token.as_ref(), value, self.store.duration)
@@ -93,7 +98,7 @@ impl<'s, T> Session<'s, T> {
 	}
 
 	/// Refreshes the expiration timer on the sesion in the store.
-	pub async fn touch(&self) {
+	pub async fn touch(&self) -> SessionResult<()> {
 		self.store
 			.store
 			.touch(self.token.as_ref(), self.store.duration)
@@ -101,7 +106,7 @@ impl<'s, T> Session<'s, T> {
 	}
 
 	/// Removes the session from the store.
-	pub async fn remove(&self) {
+	pub async fn remove(&self) -> SessionResult<()> {
 		self.store.store.remove(self.token.as_ref()).await
 	}
 }
@@ -196,5 +201,21 @@ where
 					.finish(),
 			)
 		}
+	}
+}
+
+pub type SessionResult<T> = Result<T, SessionError>;
+
+/// Errors produced when accessing the session store.
+/// 
+/// These can be problems like a database connection drop.
+/// It implements [Responder], returning a 500 status error.
+#[derive(Error, Debug)]
+#[error("could not access the session store")]
+pub struct SessionError;
+
+impl<'r, 'o: 'r> Responder<'r, 'o> for SessionError {
+	fn respond_to(self, _request: &'r Request<'_>) -> rocket::response::Result<'o> {
+		Err(Status::InternalServerError)
 	}
 }

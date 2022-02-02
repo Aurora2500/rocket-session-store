@@ -3,29 +3,22 @@ use std::{
 	time::Duration,
 };
 
-use serde_json::{
-	to_string,
-	from_slice,
-};
-
 use redis::{
 	Client,
 	ConnectionLike,
-	RedisResult,
 };
 use rocket::serde::DeserializeOwned;
 use serde::Serialize;
+use serde_json::{
+	from_slice,
+	to_string,
+};
 
-use crate::Store;
-
-fn expect_redis_result<T>(res: RedisResult<T>) -> T {
-	match res {
-		Ok(v) => v,
-		Err(why) => {
-			panic!("Redis error: {:?}\nDetails: {:?}", why.kind(), why.detail())
-		}
-	}
-}
+use crate::{
+	SessionError,
+	SessionResult,
+	Store,
+};
 
 pub struct RedisStore<T> {
 	client: Client,
@@ -48,46 +41,48 @@ where
 {
 	type Value = T;
 
-	async fn get(&self, id: &str) -> Option<T> {
+	async fn get(&self, id: &str) -> SessionResult<Option<T>> {
 		let mut cmd = redis::cmd("GET");
 		cmd.arg(id);
-		let mut con = expect_redis_result(self.client.get_connection());
-		let val = expect_redis_result(con.req_command(&cmd));
+		let mut con = self.client.get_connection().map_err(|_| SessionError)?;
+		let val = con.req_command(&cmd).map_err(|_| SessionError)?;
 		use redis::Value::*;
-		match val {
-			Nil => {
-				None
-			}
-			Data(ref bytes) => {
-				Some(from_slice(bytes).expect("Failed to deserialize"))
-			},
-			_ => todo!(),
-		}
+		Ok(match val {
+			Nil => None,
+			Data(ref bytes) => Some(from_slice(bytes).expect("Failed to deserialize")),
+			_ => None,
+		})
 	}
 
-	async fn set(&self, id: &str, value: Self::Value, duration: Duration) {
+	async fn set(&self, id: &str, value: Self::Value, duration: Duration) -> SessionResult<()> {
 		let mut cmd = redis::cmd("SET");
 		cmd.arg(id);
 		let serialized = to_string(&value).expect("Failed to serialize");
 		cmd.arg(serialized);
 		cmd.arg("EX");
 		cmd.arg(duration.as_secs());
-		let mut con = expect_redis_result(self.client.get_connection());
-		expect_redis_result(con.req_command(&cmd));
+		let mut con = self.client.get_connection().map_err(|_| SessionError)?;
+		con.req_command(&cmd).map_err(|_| SessionError)?;
+
+		Ok(())
 	}
 
-	async fn touch(&self, id: &str, duration: Duration) {
+	async fn touch(&self, id: &str, duration: Duration) -> SessionResult<()> {
 		let mut cmd = redis::cmd("EXPIRE");
 		cmd.arg(id);
 		cmd.arg(duration.as_secs());
-		let mut con = expect_redis_result(self.client.get_connection());
-		expect_redis_result(con.req_command(&cmd));
+		let mut con = self.client.get_connection().map_err(|_| SessionError)?;
+		con.req_command(&cmd).map_err(|_| SessionError)?;
+
+		Ok(())
 	}
 
-	async fn remove(&self, id: &str) {
+	async fn remove(&self, id: &str) -> SessionResult<()> {
 		let mut cmd = redis::cmd("DEL");
 		cmd.arg(id);
-		let mut con = expect_redis_result(self.client.get_connection());
-		expect_redis_result(con.req_command(&cmd));
+		let mut con = self.client.get_connection().map_err(|_| SessionError)?;
+		con.req_command(&cmd).map_err(|_| SessionError)?;
+
+		Ok(())
 	}
 }

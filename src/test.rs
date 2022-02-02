@@ -20,28 +20,29 @@ use crate::redis::RedisStore;
 use crate::{
 	memory::MemoryStore,
 	Session,
+	SessionResult,
 	SessionStore,
 	Store,
 };
 
 #[post("/set_name/<name>")]
-async fn set_name(name: String, session: Session<'_, String>) {
-	session.set(name).await;
+async fn set_name(name: String, session: Session<'_, String>) -> SessionResult<()> {
+	session.set(name).await
 }
 
 #[get("/get_name")]
-async fn get_name(session: Session<'_, String>) -> Option<String> {
+async fn get_name(session: Session<'_, String>) -> SessionResult<Option<String>> {
 	let name = session.get().await;
 	name
 }
 
 #[post("/remove_name")]
-async fn remove_name(session: Session<'_, String>) {
+async fn remove_name(session: Session<'_, String>) -> SessionResult<()> {
 	session.remove().await
 }
 
 #[post("/refresh")]
-async fn refresh(session: Session<'_, String>) {
+async fn refresh(session: Session<'_, String>) -> SessionResult<()> {
 	session.touch().await
 }
 

@@ -17,7 +17,10 @@ use rocket::tokio::sync::{
 	RwLock,
 };
 
-use crate::Store;
+use crate::{
+	SessionResult,
+	Store,
+};
 
 /// An in memory implementation of a session store using hashmaps.
 /// Do note that this implementation is just for testing purposes,
@@ -52,7 +55,7 @@ where
 {
 	type Value = T;
 
-	async fn get(&self, id: &str) -> Option<Self::Value> {
+	async fn get(&self, id: &str) -> SessionResult<Option<Self::Value>> {
 		let lock = self.map.read().await;
 		if let Some(frame) = lock.get(id) {
 			let frame_lock = frame.lock().await;
@@ -61,31 +64,36 @@ where
 				.checked_duration_since(Instant::now())
 				.is_some()
 			{
-				return Some(frame_lock.value.clone());
+				return Ok(Some(frame_lock.value.clone()));
 			};
 		};
-		None
+		Ok(None)
 	}
 
-	async fn set(&self, id: &str, value: Self::Value, expiry: Duration) {
+	async fn set(&self, id: &str, value: Self::Value, expiry: Duration) -> SessionResult<()> {
 		let mut lock = self.map.write().await;
 		let frame = MemoryStoreFrame {
 			value,
 			expiry: Instant::now() + expiry,
 		};
 		lock.insert(id.into(), Mutex::new(frame));
+
+		Ok(())
 	}
 
-	async fn touch(&self, id: &str, duration: Duration) {
+	async fn touch(&self, id: &str, duration: Duration) -> SessionResult<()> {
 		let lock = self.map.read().await;
 		if let Some(frame) = lock.get(id) {
 			let mut frame_lock = frame.lock().await;
 			frame_lock.expiry = Instant::now() + duration;
 		};
+		Ok(())
 	}
 
-	async fn remove(&self, id: &str) {
+	async fn remove(&self, id: &str) -> SessionResult<()> {
 		let mut lock = self.map.write().await;
 		lock.remove(id);
+
+		Ok(())
 	}
 }
