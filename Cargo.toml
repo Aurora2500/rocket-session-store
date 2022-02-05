@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Aurora Zuoris <programming.aurora@gmail.com>"]
 edition = "2021"
 license = "MIT"
+homepage = "https://github.com/Aurora2500/rocket-session-store"
+repository = "https://github.com/Aurora2500/rocket-session-store"
+readme = "README.md"
+description = "A rust session library that can use a custom store."
 keywords = ["rocket", "session", "cookies", "authentication"]
 
 [dependencies]
