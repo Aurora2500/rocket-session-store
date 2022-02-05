@@ -178,6 +178,6 @@ test_store!(in_memory, MemoryStore::<String>::new());
 #[cfg(feature = "redis")]
 test_store!(redis, {
 	let client = RedisClient::open("redis://127.0.0.1/").expect("Couldn't open redis");
-	let store = RedisStore::new(client);
+	let store = RedisStore::new(client).prefix("user:".to_owned());
 	store
 });

@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
+
 #[cfg(test)]
 mod test;
 
@@ -50,6 +53,9 @@ const ID_LENGTH: usize = 24;
 /// trough an in memory hashmap or a database connection.
 #[rocket::async_trait]
 pub trait Store: Send + Sync {
+	/// Type that is associated with sessions.
+	/// 
+	/// The store will store and retrieve values of this type.
 	type Value;
 	/// Get the value from the store
 	async fn get(&self, id: &str) -> SessionResult<Option<Self::Value>>;
@@ -140,8 +146,9 @@ where
 	}
 }
 
+/// Store that keeps tracks of sessions
 pub struct SessionStore<T> {
-	/// The store that will be used to store the sessions.
+	/// The store that will keep track of sessions.
 	pub store: Box<dyn Store<Value = T>>,
 	/// The name of the cookie to be used for sessions.
 	///
@@ -204,6 +211,7 @@ where
 	}
 }
 
+/// A result wrapper around [SessionError], allowing you to wrap the Result 
 pub type SessionResult<T> = Result<T, SessionError>;
 
 /// Errors produced when accessing the session store.

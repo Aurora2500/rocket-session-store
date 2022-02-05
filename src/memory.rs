@@ -41,6 +41,7 @@ impl<T> Default for MemoryStore<T> {
 }
 
 impl<T> MemoryStore<T> {
+	/// Create a new in-memory store
 	pub fn new() -> Self {
 		Self {
 			map: RwLock::default(),
