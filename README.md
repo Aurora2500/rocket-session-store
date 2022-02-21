@@ -54,3 +54,7 @@ fn rocket() -> _ {
 }
 
 ```
+
+# Contributing
+
+If you wish to contribute, please read [CONTRIBUTING.md](CONTRIBUTING.md).
