@@ -23,6 +23,7 @@ use rocket::{
 	},
 	http::{
 		Cookie,
+		SameSite,
 		Status,
 	},
 	request::{
@@ -54,7 +55,7 @@ const ID_LENGTH: usize = 24;
 #[rocket::async_trait]
 pub trait Store: Send + Sync {
 	/// Type that is associated with sessions.
-	/// 
+	///
 	/// The store will store and retrieve values of this type.
 	type Value;
 	/// Get the value from the store
@@ -146,6 +147,36 @@ where
 	}
 }
 
+/// The cookie options for the session cookie. Currently only a small subset of
+/// available options via the CookieBuilder are supported.
+#[derive(Clone)]
+pub struct CookieConfig {
+	/// A string indicating the path of the cookie.
+	///
+	/// Defaults to the request path if not specified.
+	pub path: Option<String>,
+	/// The same site policy of the cookie.
+	///
+	/// Defaults to `Lax` if not specified.
+	pub same_site: Option<SameSite>,
+	/// Whether the cookie is only to be sent over HTTPS
+	pub secure: bool,
+	/// Whether the cookie is only to be sent over HTTP(S), and not made available to client JavaScript
+	pub http_only: bool,
+}
+
+impl Default for CookieConfig {
+	/// Create default cookie config.
+	fn default() -> Self {
+		Self {
+			path: None,
+			same_site: None,
+			secure: false,
+			http_only: true,
+		}
+	}
+}
+
 /// Store that keeps tracks of sessions
 pub struct SessionStore<T> {
 	/// The store that will keep track of sessions.
@@ -159,6 +190,10 @@ pub struct SessionStore<T> {
 	/// When so much time passes after storing or touching a session, it expires
 	/// and won't be accesible.
 	pub duration: Duration,
+	/// The cookie options.
+	///
+	/// This will be used in the fairing to build the cookie
+	pub cookie: CookieConfig,
 }
 
 impl<T> SessionStore<T> {
@@ -202,20 +237,30 @@ where
 		if !session.0.is_empty() {
 			let store: &State<SessionStore<T>> = request.guard().await.expect("");
 			let name = store.name.as_str();
+			let cookie = &store.cookie;
 			response.adjoin_header(
 				Cookie::build(name, session.0.as_str())
-					.http_only(true)
+					.http_only(cookie.http_only)
+					.path(
+						cookie
+							.path
+							.as_ref()
+							.unwrap_or(&request.uri().path().to_string())
+							.as_str(),
+					)
+					.same_site(cookie.same_site.unwrap_or(SameSite::Lax))
+					.secure(cookie.secure)
 					.finish(),
 			)
 		}
 	}
 }
 
-/// A result wrapper around [SessionError], allowing you to wrap the Result 
+/// A result wrapper around [SessionError], allowing you to wrap the Result
 pub type SessionResult<T> = Result<T, SessionError>;
 
 /// Errors produced when accessing the session store.
-/// 
+///
 /// These can be problems like a database connection drop.
 /// It implements [Responder], returning a 500 status error.
 #[derive(Error, Debug)]
