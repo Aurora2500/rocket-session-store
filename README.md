@@ -16,6 +16,7 @@ use rocket_session_store::{
 	SessionStore,
 	SessionResult,
 	Session,
+	CookieConfig,
 };
 
 use rocket::{
@@ -27,7 +28,7 @@ use rocket::{
 
 use std::time::Duration;
 
-// Using the `Session` request guard 
+// Using the `Session` request guard
 
 #[get("/")]
 async fn index(session: Session<'_, String>) -> SessionResult<String> {
@@ -46,9 +47,11 @@ fn rocket() -> _ {
 	let store: SessionStore<String> = SessionStore {
 		store: Box::new(memory_store),
 		name: "token".into(),
-		duration: Duration::from_secs(3600 * 24 * 3)
+		duration: Duration::from_secs(3600 * 24 * 3),
+		// The cookie config is used to set the cookie's path and other options.
+		cookie: CookieConfig::default(),
 	};
-	
+
 	// Attach it to a rocket by calling `fairing()`
 	rocket::build().attach(store.fairing()).mount("/", routes![index])
 }

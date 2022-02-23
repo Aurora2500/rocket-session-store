@@ -7,7 +7,10 @@ use std::{
 use ::redis::Client as RedisClient;
 use rocket::{
 	get,
-	http::Status,
+	http::{
+		SameSite,
+		Status,
+	},
 	local::blocking::Client,
 	post,
 	routes,
@@ -19,6 +22,7 @@ use rocket::{
 use crate::redis::RedisStore;
 use crate::{
 	memory::MemoryStore,
+	CookieConfig,
 	Session,
 	SessionResult,
 	SessionStore,
@@ -58,6 +62,7 @@ fn generic_basic_test(store: impl Store<Value = String> + 'static) {
 			store: Box::new(store),
 			name: "token".into(),
 			duration: Duration::from_secs(3600),
+			cookie: CookieConfig::default(),
 		};
 		let rocket = example_rocket(session_store);
 		Client::tracked(rocket).expect("Expected to build client")
@@ -83,6 +88,7 @@ fn generic_expiration_test(store: impl Store<Value = String> + 'static) {
 			store: Box::new(store),
 			name: "token".into(),
 			duration: Duration::from_secs(1),
+			cookie: CookieConfig::default(),
 		};
 		let rocket = example_rocket(session_store);
 		Client::tracked(rocket).expect("Expected to build client")
@@ -103,6 +109,7 @@ fn generic_remove_test(store: impl Store<Value = String> + 'static) {
 			store: Box::new(store),
 			name: "token".into(),
 			duration: Duration::from_secs(3600),
+			cookie: CookieConfig::default(),
 		};
 		let rocket = example_rocket(session_store);
 		Client::tracked(rocket).expect("Expected to build client")
@@ -130,6 +137,7 @@ fn generic_refresh_test(store: impl Store<Value = String> + 'static) {
 			store: Box::new(store),
 			name: "token".into(),
 			duration: Duration::from_secs(2),
+			cookie: CookieConfig::default(),
 		};
 		let rocket = example_rocket(session_store);
 		Client::tracked(rocket).expect("Expected to build client")
@@ -143,6 +151,40 @@ fn generic_refresh_test(store: impl Store<Value = String> + 'static) {
 	sleep(Duration::from_millis(1_500));
 	let res3 = client.get("/get_name").dispatch();
 	assert_eq!(res3.status(), Status::Ok);
+}
+
+fn cookie_config_test(store: impl Store<Value = String> + 'static) {
+	let client: Client = {
+		let session_store: SessionStore<String> = SessionStore {
+			store: Box::new(store),
+			name: "token".into(),
+			duration: Duration::from_secs(2),
+			cookie: CookieConfig {
+				path: Some("/".into()),
+				same_site: Some(SameSite::Lax),
+				secure: true,
+				http_only: true,
+			},
+		};
+		let rocket = example_rocket(session_store);
+		Client::tracked(rocket).expect("Expected to build client")
+	};
+
+	// make a request to set a cookie
+	let res1 = client.post("/set_name/TestingName").dispatch();
+	assert_eq!(res1.status(), Status::Ok);
+
+	let cookie_jar = client.cookies();
+	let cookie = cookie_jar.get("token");
+
+	assert!(cookie.is_some());
+
+	let cookie = cookie.unwrap();
+
+	assert_eq!(cookie.path(), Some("/"));
+	assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+	assert_eq!(cookie.secure(), Some(true));
+	assert_eq!(cookie.http_only(), Some(true));
 }
 
 macro_rules! test_store {
@@ -168,6 +210,11 @@ macro_rules! test_store {
 			#[test]
 			fn refresh_test() {
 				generic_refresh_test($store);
+			}
+
+			#[test]
+			fn cookie_test() {
+				cookie_config_test($store);
 			}
 		}
 	};

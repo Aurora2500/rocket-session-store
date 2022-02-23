@@ -8,7 +8,7 @@
 //! ```no_run
 //! # use std::time::Duration;
 //! # use redis::Client;
-//! # use rocket_session_store::{SessionStore, redis::RedisStore};
+//! # use rocket_session_store::{SessionStore, CookieConfig, redis::RedisStore};
 //! let client: Client = Client::open("redis://127.0.0.1")
 //! 	.expect("Failed to connect to redis");
 //! let redis_store: RedisStore<String> = RedisStore::new(client);
@@ -16,6 +16,7 @@
 //! 	store: Box::new(redis_store),
 //! 	name: "token".into(),
 //! 	duration: Duration::from_secs(3600),
+//! 	cookie: CookieConfig::default(),
 //! };
 //! ```
 
