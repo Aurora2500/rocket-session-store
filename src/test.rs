@@ -153,7 +153,7 @@ fn generic_refresh_test(store: impl Store<Value = String> + 'static) {
 	assert_eq!(res3.status(), Status::Ok);
 }
 
-fn cookie_config_test(store: impl Store<Value = String> + 'static) {
+fn generic_cookie_config_test(store: impl Store<Value = String> + 'static) {
 	let client: Client = {
 		let session_store: SessionStore<String> = SessionStore {
 			store: Box::new(store),
@@ -187,6 +187,38 @@ fn cookie_config_test(store: impl Store<Value = String> + 'static) {
 	assert_eq!(cookie.http_only(), Some(true));
 }
 
+fn generic_dont_resend_cookie_test(store: impl Store<Value = String> + 'static) {
+	let client: Client = {
+		let session_store: SessionStore<String> = SessionStore {
+			store: Box::new(store),
+			name: "token".into(),
+			duration: Duration::from_secs(2),
+			cookie: CookieConfig::default(),
+		};
+		let rocket = example_rocket(session_store);
+		Client::tracked(rocket).expect("Expected to build client")
+	};
+
+	let res1 = client.post("/set_name/TestingName").dispatch();
+	assert_eq!(res1.status(), Status::Ok);
+	// The first request should add a session cookie
+	assert_eq!(res1.cookies().iter().collect::<Vec<_>>().len(), 1);
+
+	// Subsequent requests shouldn't set the cookie
+
+	let res2 = client.post("/set_name/NewName").dispatch();
+	assert_eq!(res2.status(), Status::Ok);
+	assert_eq!(res2.cookies().iter().collect::<Vec<_>>().len(), 0);
+
+	let res3 = client.post("/refresh").dispatch();
+	assert_eq!(res3.status(), Status::Ok);
+	assert_eq!(res3.cookies().iter().collect::<Vec<_>>().len(), 0);
+
+	let res4 = client.get("/get_name").dispatch();
+	assert_eq!(res4.status(), Status::Ok);
+	assert_eq!(res4.cookies().iter().collect::<Vec<_>>().len(), 0);
+}
+
 macro_rules! test_store {
 	($name:ident, $store:expr) => {
 		mod $name {
@@ -213,8 +245,13 @@ macro_rules! test_store {
 			}
 
 			#[test]
-			fn cookie_test() {
-				cookie_config_test($store);
+			fn cookie_config_test() {
+				generic_cookie_config_test($store);
+			}
+
+			#[test]
+			fn dont_resend_cookie_test() {
+				generic_dont_resend_cookie_test($store);
 			}
 		}
 	};

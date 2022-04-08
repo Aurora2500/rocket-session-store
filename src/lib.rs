@@ -238,20 +238,22 @@ where
 			let store: &State<SessionStore<T>> = request.guard().await.expect("");
 			let name = store.name.as_str();
 			let cookie = &store.cookie;
-			response.adjoin_header(
-				Cookie::build(name, session.0.as_str())
-					.http_only(cookie.http_only)
-					.path(
-						cookie
-							.path
-							.as_ref()
-							.unwrap_or(&request.uri().path().to_string())
-							.as_str(),
-					)
-					.same_site(cookie.same_site.unwrap_or(SameSite::Lax))
-					.secure(cookie.secure)
-					.finish(),
-			)
+			if request.cookies().get(name).is_none() {
+				response.adjoin_header(
+					Cookie::build(name, session.0.as_str())
+						.http_only(cookie.http_only)
+						.path(
+							cookie
+								.path
+								.as_ref()
+								.unwrap_or(&request.uri().path().to_string())
+								.as_str(),
+						)
+						.same_site(cookie.same_site.unwrap_or(SameSite::Lax))
+						.secure(cookie.secure)
+						.finish(),
+				);
+			}
 		}
 	}
 }
