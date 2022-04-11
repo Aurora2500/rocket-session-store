@@ -1,14 +1,16 @@
 //! A redis implementation of a session store.
-//! 
+//!
 //! This module provides [RedisStore], which is a
 //! session store that uses redis.
-//! 
+//!
 //! ## Example
-//! 
-//! ```no_run
-//! # use std::time::Duration;
-//! # use redis::Client;
-//! # use rocket_session_store::{SessionStore, CookieConfig, redis::RedisStore};
+//!
+//! ```rust
+//! use std::time::Duration;
+//! use redis::Client;
+//! use rocket_session_store::{SessionStore, redis::RedisStore};
+//! use rocket::http::private::cookie::CookieBuilder;
+//!
 //! let client: Client = Client::open("redis://127.0.0.1")
 //! 	.expect("Failed to connect to redis");
 //! let redis_store: RedisStore<String> = RedisStore::new(client);
@@ -16,7 +18,7 @@
 //! 	store: Box::new(redis_store),
 //! 	name: "token".into(),
 //! 	duration: Duration::from_secs(3600),
-//! 	cookie: CookieConfig::default(),
+//! 	cookie_builder: CookieBuilder::new("", ""),
 //! };
 //! ```
 
@@ -51,7 +53,6 @@ pub struct RedisStore<T> {
 }
 
 impl<T> RedisStore<T> {
-
 	/// Creates a new store from a redis client.
 	pub fn new(client: Client) -> Self {
 		Self {
@@ -63,19 +64,19 @@ impl<T> RedisStore<T> {
 	}
 
 	/// Adds a prefix to the key when storing it to the redis database.
-	/// 
+	///
 	/// For example, if a session had the cookie "1234", giving it the
 	/// prefix "user:" will store the session under the key "user:1234".
-	pub fn prefix(mut self, prefix: String) -> Self{
+	pub fn prefix(mut self, prefix: String) -> Self {
 		self.prefix = Some(prefix);
 		self
 	}
 
 	/// Adds a postfix to the key when storing it to the redis database.
-	/// 
+	///
 	/// For example, if a session had the cookie "1234", giving it the
 	/// postfix ":id" will store the session under the key "1234:id"
-	pub fn postfix(mut self, postfix: String) -> Self{
+	pub fn postfix(mut self, postfix: String) -> Self {
 		self.postfix = Some(postfix);
 		self
 	}

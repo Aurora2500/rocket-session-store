@@ -9,7 +9,10 @@ pub mod memory;
 #[cfg(feature = "redis")]
 pub mod redis;
 
-use std::time::Duration;
+use std::{
+	sync::Arc,
+	time::Duration,
+};
 
 use rand::{
 	rngs::OsRng,
@@ -22,8 +25,7 @@ use rocket::{
 		Kind,
 	},
 	http::{
-		Cookie,
-		SameSite,
+		private::cookie::CookieBuilder,
 		Status,
 	},
 	request::{
@@ -40,12 +42,14 @@ use rocket::{
 };
 use thiserror::Error;
 
-fn new_id(length: usize) -> String {
-	OsRng
-		.sample_iter(&rand::distributions::Alphanumeric)
-		.take(length)
-		.map(char::from)
-		.collect()
+fn new_id(length: usize) -> SessionID {
+	SessionID(
+		OsRng
+			.sample_iter(&rand::distributions::Alphanumeric)
+			.take(length)
+			.map(char::from)
+			.collect(),
+	)
 }
 
 const ID_LENGTH: usize = 24;
@@ -80,12 +84,13 @@ impl AsRef<str> for SessionID {
 
 /// A request guard implementing [FromRequest] to retrive the session
 /// based on the cookie from the user.
-pub struct Session<'s, T: 'static> {
+pub struct Session<'s, T: Send + Sync + Clone + 'static> {
 	store: &'s State<SessionStore<T>>,
-	pub(crate) token: SessionID,
+	token: SessionID,
+	new_token: Arc<Mutex<Option<SessionID>>>,
 }
 
-impl<'s, T> Session<'s, T> {
+impl<'s, T: Send + Sync + Clone + 'static> Session<'s, T> {
 	/// Get the session value from the store.
 	///
 	/// Returns [None] if there is no initialized session value
@@ -116,6 +121,92 @@ impl<'s, T> Session<'s, T> {
 	pub async fn remove(&self) -> SessionResult<()> {
 		self.store.store.remove(self.token.as_ref()).await
 	}
+
+	/// Regenerates the session token. The fairing will automatically add a cookie to the response with the new token.
+	///
+	/// It is important to regenerate the session token after a user is authenticated in order to prevent session fixation attacks.
+	///
+	/// This also has a side effect of refreshing the expiration timer on the session.
+	///
+	/// # Examples
+	///
+	/// ```rust
+	/// use rocket::{
+	/// 	http::private::cookie::CookieBuilder,
+	/// 	serde::{
+	/// 		Deserialize,
+	/// 		Serialize,
+	/// 	},
+	/// 	Build,
+	/// 	Rocket,
+	/// };
+	/// use rocket_session_store::{
+	/// 	memory::MemoryStore,
+	/// 	Session,
+	/// 	SessionError,
+	/// 	SessionStore,
+	/// };
+	///
+	/// #[macro_use]
+	/// extern crate rocket;
+	///
+	/// # fn main() { // Makes doc test happy for extern crate
+	/// #[launch]
+	/// fn rocket() -> Rocket<Build> {
+	/// 	let session_store = SessionStore::<SessionState> {
+	/// 		store: Box::new(MemoryStore::new()),
+	/// 		name: "session".into(),
+	/// 		duration: std::time::Duration::from_secs(24 * 60 * 60),
+	/// 		cookie_builder: CookieBuilder::new("", ""),
+	/// 	};
+	///
+	/// 	rocket::build()
+	/// 		.attach(session_store.fairing())
+	/// 		.mount("/", routes![login])
+	/// }
+	///
+	/// #[post("/login")]
+	/// async fn login(mut session: Session<'_, SessionState>) -> Result<(), SessionError> {
+	/// 	// Authenticate the user (check password, 2fa, etc)
+	/// 	// ...
+	///
+	/// 	let user_id = Some(1);
+	///
+	/// 	// Important! Regenerate _before_ updating the session for the authenticated user. We don't
+	/// 	// want to run into a scenario where updating the session works, but then regenerating the
+	/// 	// token fails for some reason leaving the old session still valid with the user logged in
+	/// 	// (eg due to an intermittent redis connection issue or something).
+	/// 	session.regenerate_token().await?;
+	/// 	session.set(SessionState { user_id }).await?;
+	///
+	/// 	Ok(())
+	/// }
+	///
+	/// #[derive(Serialize, Deserialize, Clone, Copy)]
+	/// #[serde(crate = "rocket::serde")]
+	/// struct SessionState {
+	/// 	user_id: Option<u32>,
+	/// }
+	/// # }
+	/// ```
+	pub async fn regenerate_token<'r>(&mut self) -> SessionResult<()> {
+		let mut new_token_opt = self.new_token.lock().await;
+		if new_token_opt.is_some() {
+			// If a new token has already been generated then there's no point regenerating it again.
+			return Ok(());
+		}
+
+		// Retrieve existing session, remove it under the current token, and add it under a new token.
+		let session_opt = self.get().await?;
+		self.remove().await?;
+		self.token = new_id(ID_LENGTH);
+		*new_token_opt = Some(self.token.clone());
+		if let Some(session) = session_opt {
+			self.set(session).await?;
+		}
+
+		Ok(())
+	}
 }
 
 #[rocket::async_trait]
@@ -130,50 +221,31 @@ where
 			.guard()
 			.await
 			.expect("Session store must be set in fairing");
-		let token: SessionID = request
+		let (token, new_token) = request
 			.local_cache_async(async {
 				let cookies = request.cookies();
-				let token = cookies.get(store.name.as_str()).map_or_else(
-					|| SessionID(new_id(ID_LENGTH)),
-					|c| SessionID(String::from(c.value())),
-				);
-				token
+				cookies.get(store.name.as_str()).map_or_else(
+					|| {
+						let token = new_id(ID_LENGTH);
+						(token.clone(), Arc::new(Mutex::new(Some(token))))
+					},
+					|c| {
+						(
+							SessionID(String::from(c.value())),
+							Arc::new(Mutex::new(None)),
+						)
+					},
+				)
 			})
 			.await
 			.clone();
 
-		let session = Session { store, token };
+		let session = Session {
+			store,
+			token,
+			new_token,
+		};
 		Outcome::Success(session)
-	}
-}
-
-/// The cookie options for the session cookie. Currently only a small subset of
-/// available options via the CookieBuilder are supported.
-#[derive(Clone)]
-pub struct CookieConfig {
-	/// A string indicating the path of the cookie.
-	///
-	/// Defaults to the request path if not specified.
-	pub path: Option<String>,
-	/// The same site policy of the cookie.
-	///
-	/// Defaults to `Lax` if not specified.
-	pub same_site: Option<SameSite>,
-	/// Whether the cookie is only to be sent over HTTPS
-	pub secure: bool,
-	/// Whether the cookie is only to be sent over HTTP(S), and not made available to client JavaScript
-	pub http_only: bool,
-}
-
-impl Default for CookieConfig {
-	/// Create default cookie config.
-	fn default() -> Self {
-		Self {
-			path: None,
-			same_site: None,
-			secure: false,
-			http_only: true,
-		}
 	}
 }
 
@@ -192,8 +264,13 @@ pub struct SessionStore<T> {
 	pub duration: Duration,
 	/// The cookie options.
 	///
-	/// This will be used in the fairing to build the cookie
-	pub cookie: CookieConfig,
+	/// This will be used in the fairing to build the cookie. Each time a cookie needs to
+	/// be set the CookieBuilder will be cloned and the name and value will be overwritten.
+	///
+	/// Note that Rocket defaults to setting the `Secure` attribute for cookies, so when doing local development over
+	/// HTTP without TLS `CookieBuilder::secure(false)` must be used to allow sending the session cookie over an
+	/// insecure connnection, but it is important that this is never done in production to prevent session hijacking.
+	pub cookie_builder: CookieBuilder<'static>,
 }
 
 impl<T> SessionStore<T> {
@@ -214,10 +291,7 @@ pub struct SessionStoreFairing<T> {
 }
 
 #[rocket::async_trait]
-impl<T> Fairing for SessionStoreFairing<T>
-where
-	T: 'static,
-{
+impl<T: Send + Sync + Clone + 'static> Fairing for SessionStoreFairing<T> {
 	fn info(&self) -> rocket::fairing::Info {
 		Info {
 			name: "Session Store",
@@ -233,25 +307,17 @@ where
 	}
 
 	async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
-		let session: &SessionID = request.local_cache(|| SessionID("".into()));
-		if !session.0.is_empty() {
-			let store: &State<SessionStore<T>> = request.guard().await.expect("");
-			let name = store.name.as_str();
-			let cookie = &store.cookie;
-			response.adjoin_header(
-				Cookie::build(name, session.0.as_str())
-					.http_only(cookie.http_only)
-					.path(
-						cookie
-							.path
-							.as_ref()
-							.unwrap_or(&request.uri().path().to_string())
-							.as_str(),
-					)
-					.same_site(cookie.same_site.unwrap_or(SameSite::Lax))
-					.secure(cookie.secure)
-					.finish(),
-			)
+		// If there is a new session id, set the cookie
+		match Session::<T>::from_request(request).await {
+			Outcome::Success(session) => {
+				if let Some(new_token) = &*session.new_token.lock().await {
+					let mut cookie = session.store.cookie_builder.clone().finish();
+					cookie.set_name(&session.store.name);
+					cookie.set_value(&new_token.0);
+					response.adjoin_header(cookie);
+				}
+			}
+			_ => (),
 		}
 	}
 }

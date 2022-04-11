@@ -12,7 +12,7 @@ keywords = ["rocket", "session", "cookies", "authentication"]
 categories = ["asynchronous", "authentication", "database", "web-programming::http-server"]
 
 [dependencies]
-rocket =  "0.5.0-rc.1"
+rocket = "0.5.0-rc.1"
 redis = { version = "0.21.5", optional = true }
 serde = "1.0.134"
 serde_json = "1.0.76"
