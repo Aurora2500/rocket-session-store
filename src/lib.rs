@@ -11,32 +11,14 @@ pub mod redis;
 
 use std::time::Duration;
 
-use rand::{
-	rngs::OsRng,
-	Rng,
-};
+use rand::{rngs::OsRng, Rng};
 use rocket::{
-	fairing::{
-		Fairing,
-		Info,
-		Kind,
-	},
-	http::{
-		Cookie,
-		SameSite,
-		Status,
-	},
-	request::{
-		FromRequest,
-		Outcome,
-	},
+	fairing::{Fairing, Info, Kind},
+	http::{Cookie, SameSite, Status},
+	request::{FromRequest, Outcome},
 	response::Responder,
 	tokio::sync::Mutex,
-	Build,
-	Request,
-	Response,
-	Rocket,
-	State,
+	Build, Request, Response, Rocket, State,
 };
 use thiserror::Error;
 
@@ -238,8 +220,8 @@ where
 			let store: &State<SessionStore<T>> = request.guard().await.expect("");
 			let name = store.name.as_str();
 			let cookie = &store.cookie;
-			response.adjoin_header(
-				Cookie::build(name, session.0.as_str())
+			response.adjoin_header::<Cookie>(
+				Cookie::build((name, session.0.as_str()))
 					.http_only(cookie.http_only)
 					.path(
 						cookie
@@ -250,7 +232,7 @@ where
 					)
 					.same_site(cookie.same_site.unwrap_or(SameSite::Lax))
 					.secure(cookie.secure)
-					.finish(),
+					.into(),
 			)
 		}
 	}
