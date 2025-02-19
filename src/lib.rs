@@ -14,10 +14,7 @@ use std::{
 	time::Duration,
 };
 
-use rand::{
-	rngs::OsRng,
-	Rng,
-};
+use rand::{rngs::OsRng, Rng, TryRngCore};
 use rocket::{
 	fairing::{
 		Fairing,
@@ -34,18 +31,15 @@ use rocket::{
 	},
 	response::Responder,
 	tokio::sync::Mutex,
-	Build,
-	Request,
-	Response,
-	Rocket,
-	State,
+	Build, Request, Response, Rocket, State,
 };
 use thiserror::Error;
 
 fn new_id(length: usize) -> SessionID {
 	SessionID(
 		OsRng
-			.sample_iter(&rand::distributions::Alphanumeric)
+			.unwrap_err()
+			.sample_iter(&rand::distr::Alphanumeric)
 			.take(length)
 			.map(char::from)
 			.collect(),
@@ -311,7 +305,7 @@ impl<T: Send + Sync + Clone + 'static> Fairing for SessionStoreFairing<T> {
 		match Session::<T>::from_request(request).await {
 			Outcome::Success(session) => {
 				if let Some(new_token) = &*session.new_token.lock().await {
-					let mut cookie = session.store.cookie_builder.clone().finish();
+					let mut cookie = session.store.cookie_builder.clone().build();
 					cookie.set_name(&session.store.name);
 					cookie.set_value(&new_token.0);
 					response.adjoin_header(cookie);

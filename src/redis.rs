@@ -113,7 +113,7 @@ where
 		use redis::Value::*;
 		Ok(match val {
 			Nil => None,
-			Data(ref bytes) => Some(from_slice(bytes).expect("Failed to deserialize")),
+			BulkString(ref bytes) => Some(from_slice(bytes).expect("Failed to deserialize")),
 			_ => None,
 		})
 	}
